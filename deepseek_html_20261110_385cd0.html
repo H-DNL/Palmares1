@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Palmares — Livro Vivo (30 páginas)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; background: #080402; font-family: 'Georgia', serif; color: #f3e2c1; user-select: none; height: 100%; }
+  canvas { display: block; touch-action: none; }
+  #app { position: fixed; inset: 0; }
+  #intro-screen { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 50%, rgba(34,18,8,0.95), rgba(8,4,2,0.99)); backdrop-filter: blur(6px); transition: opacity 1s ease; text-align: center; padding: 30px; }
+  #intro-screen.hidden { opacity: 0; pointer-events: none; }
+  #intro-screen h1 { font-family: 'Playfair Display', Georgia, serif; font-size: clamp(2.5rem, 8vw, 5rem); letter-spacing: 0.3em; color: #e0c080; text-shadow: 0 0 40px rgba(201,162,74,0.4); margin-bottom: 18px; }
+  #intro-screen h2 { font-family: 'Playfair Display', Georgia, serif; font-size: clamp(0.8rem, 2.4vw, 1.1rem); letter-spacing: 0.4em; color: #8b5a2b; text-transform: uppercase; font-weight: normal; margin-bottom: 60px; }
+  #intro-screen .credit { position: absolute; bottom: 30px; font-size: 0.7rem; letter-spacing: 3px; color: #5a3018; text-transform: uppercase; }
+  button { font-family: 'Georgia', serif; font-size: 0.85rem; letter-spacing: 2px; padding: 12px 22px; background: rgba(59,30,15,0.85); color: #f3e2c1; border: 1px solid #8b5a2b; border-radius: 4px; cursor: pointer; text-transform: uppercase; transition: all 0.25s ease; }
+  button:hover:not(:disabled) { background: rgba(139,90,43,0.92); border-color: #c9a24a; box-shadow: 0 0 20px rgba(201,162,74,0.3); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  #ui { position: fixed; inset: 0; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 22px; }
+  #header { text-align: center; letter-spacing: 8px; font-size: 0.82rem; color: #c9a24a; text-transform: uppercase; text-shadow: 0 1px 8px rgba(0,0,0,0.9); }
+  #footer { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+  #page-indicator { letter-spacing: 4px; font-size: 0.78rem; color: #c9a24a; text-transform: uppercase; background: rgba(8,4,2,0.7); padding: 10px 18px; border: 1px solid #3b1e0f; border-radius: 4px; backdrop-filter: blur(8px); }
+  #controls { display: flex; gap: 10px; flex-wrap: wrap; }
+  #controls button { pointer-events: auto; }
+  #hint { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); font-size: 0.85rem; letter-spacing: 1px; color: #f0d8a0; text-align: center; line-height: 1.55; background: rgba(8,4,2,0.88); padding: 14px 26px; border: 1px solid #5a3018; border-radius: 4px; backdrop-filter: blur(10px); max-width: min(90vw, 640px); width: max-content; opacity: 0; transition: opacity 0.5s ease; pointer-events: none; z-index: 20; font-style: italic; }
+  #hint.show { opacity: 1; }
+  @media (max-width: 600px) { #header { font-size: 0.65rem; letter-spacing: 4px; } #footer { flex-direction: column; align-items: stretch; } #controls { justify-content: center; } #controls button { flex: 1; padding: 10px 12px; font-size: 0.7rem; } }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app"></div>
+  <div id="intro-screen">
+    <h1>PALMARES</h1>
+    <h2>30 páginas · a nação que virou lenda</h2>
+    <button id="start-btn">Abrir o livro</button>
+    <div class="credit">Serra da Barriga · Século XVII</div>
+  </div>
+  <div id="ui">
+    <div id="header">✦ Palmares — Livro Vivo ✦</div>
+    <div id="footer">
+      <div id="page-indicator">—</div>
+      <div id="controls">
+        <button id="prev-btn">← Anterior</button>
+        <button id="next-btn">Próxima →</button>
+        <button id="reset-btn">↻ Reiniciar</button>
+      </div>
+    </div>
+  </div>
+  <div id="hint"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+  </script>
+  <script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+  /* ===================== SETUP ===================== */
+  const PAGE_W = 2.2, PAGE_H = 3.0, GAP = 0.09;
+  const interactiveObjects = [];
+  const idleObjects = [];
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x140a06);
+  scene.fog = new THREE.Fog(0x140a06, 10, 24);
+
+  const camera = new THREE.PerspectiveCamera(44, innerWidth / innerHeight, 0.1, 100);
+  camera.position.set(0, 5.2, 6.8);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+  document.getElementById('app').appendChild(renderer.domElement);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0.35, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 4.5;
+  controls.maxDistance = 11;
+  controls.minPolarAngle = 0.35;
+  controls.maxPolarAngle = Math.PI / 2.15;
+  controls.enablePan = false;
+  controls.update();
+
+  scene.add(new THREE.HemisphereLight(0xffe0b0, 0x2a1206, 0.7));
+  const keyLight = new THREE.DirectionalLight(0xfff2d8, 2.5);
+  keyLight.position.set(5, 9, 4); keyLight.castShadow = true;
+  keyLight.shadow.mapSize.set(2048, 2048);
+  keyLight.shadow.camera.left = -8; keyLight.shadow.camera.right = 8;
+  keyLight.shadow.camera.top = 8; keyLight.shadow.camera.bottom = -8;
+  keyLight.shadow.camera.near = 0.5; keyLight.shadow.camera.far = 25;
+  keyLight.shadow.bias = -0.0004; keyLight.shadow.normalBias = 0.02;
+  scene.add(keyLight);
+  const fillLight = new THREE.PointLight(0xff7a3a, 3.0, 12, 2);
+  fillLight.position.set(-4, 2.8, 4); scene.add(fillLight);
+  const rimLight = new THREE.PointLight(0x5a8fd8, 2.2, 12, 2);
+  rimLight.position.set(4, 3, -4); scene.add(rimLight);
+
+  /* Brasas */
+  const EMBER_COUNT = 90;
+  const emberGeom = new THREE.BufferGeometry();
+  const emberPositions = new Float32Array(EMBER_COUNT * 3);
+  const emberData = [];
+  for (let i = 0; i < EMBER_COUNT; i++) {
+    emberPositions[i*3] = (Math.random() - 0.5) * 18;
+    emberPositions[i*3+1] = Math.random() * 7;
+    emberPositions[i*3+2] = (Math.random() - 0.5) * 18;
+    emberData.push({ speed: 0.3 + Math.random() * 0.7, wobble: Math.random() * Math.PI * 2 });
+  }
+  emberGeom.setAttribute('position', new THREE.BufferAttribute(emberPositions, 3));
+  const emberMat = new THREE.PointsMaterial({ color: 0xffa040, size: 0.05, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
+  scene.add(new THREE.Points(emberGeom, emberMat));
+
+  /* ===================== LIVRO ===================== */
+  const book = new THREE.Group();
+  scene.add(book);
+  const cover = new THREE.Mesh(new THREE.BoxGeometry(PAGE_W*2 + GAP + 0.3, 0.18, PAGE_H + 0.3), new THREE.MeshStandardMaterial({ color: 0x2a1306, roughness: 0.6, metalness: 0.15 }));
+  cover.position.y = -0.09; cover.receiveShadow = true; cover.castShadow = true; book.add(cover);
+  const trim = new THREE.Mesh(new THREE.BoxGeometry(PAGE_W*2 + GAP + 0.34, 0.02, PAGE_H + 0.34), new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.28, metalness: 0.85 }));
+  trim.position.y = -0.005; book.add(trim);
+  const leftPageMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 });
+  const leftPage = new THREE.Mesh(new THREE.PlaneGeometry(PAGE_W, PAGE_H), leftPageMat);
+  leftPage.rotation.x = -Math.PI / 2;
+  leftPage.position.set(-PAGE_W/2 - GAP/2, 0.012, 0);
+  leftPage.receiveShadow = true; book.add(leftPage);
+  const rightPage = new THREE.Mesh(new THREE.PlaneGeometry(PAGE_W, PAGE_H), new THREE.MeshStandardMaterial({ color: 0xf3e2c1, roughness: 0.95 }));
+  rightPage.rotation.x = -Math.PI / 2;
+  rightPage.position.set(PAGE_W/2 + GAP/2, 0.012, 0);
+  rightPage.receiveShadow = true; book.add(rightPage);
+  const RIGHT_PAGE_CENTER = new THREE.Vector3(PAGE_W/2 + GAP/2, 0.012, 0);
+
+  let currentTextTexture = null;
+  function makePageTexture(title, body) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024; canvas.height = 1396;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#f3e2c1'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < 8000; i++) { ctx.fillStyle = `rgba(100,70,40,${Math.random()*0.06})`; ctx.fillRect(Math.random()*canvas.width, Math.random()*canvas.height, 1, 1); }
+    const grad = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 300, canvas.width/2, canvas.height/2, 850);
+    grad.addColorStop(0, 'rgba(0,0,0,0)'); grad.addColorStop(1, 'rgba(80,50,20,0.18)');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#8b5a2b'; ctx.lineWidth = 4; ctx.strokeRect(50, 50, canvas.width-100, canvas.height-100);
+    ctx.fillStyle = '#5a2e0f'; ctx.font = 'bold 62px Georgia, serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(title, canvas.width/2, 155);
+    ctx.strokeStyle = '#a0522d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(canvas.width/2-160, 215); ctx.lineTo(canvas.width/2+160, 215); ctx.stroke();
+    ctx.fillStyle = '#3b1e0f'; ctx.font = '33px Georgia, serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    const padding = 88, maxWidth = canvas.width - padding*2, lineHeight = 46; let y = 285;
+    for (const para of body.split('\n')) {
+      if (para.trim() === '') { y += lineHeight * 0.5; continue; }
+      const words = para.split(' '); let line = '';
+      for (const w of words) {
+        const test = line + w + ' ';
+        if (ctx.measureText(test).width > maxWidth && line !== '') { ctx.fillText(line.trim(), padding, y); line = w + ' '; y += lineHeight; }
+        else { line = test; }
+      }
+      if (line.trim()) { ctx.fillText(line.trim(), padding, y); y += lineHeight; }
+      y += lineHeight * 0.4;
+    }
+    ctx.fillStyle = '#8b5a2b'; ctx.font = 'italic 26px Georgia, serif'; ctx.textAlign = 'center';
+    ctx.fillText('✦', canvas.width/2, canvas.height - 105);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return tex;
+  }
+  function updateLeftPageText(title, body) {
+    if (currentTextTexture) currentTextTexture.dispose();
+    currentTextTexture = makePageTexture(title, body);
+    leftPageMat.map = currentTextTexture; leftPageMat.needsUpdate = true;
+  }
+  function showHint(text, duration = 4800) {
+    const hint = document.getElementById('hint');
+    hint.textContent = text; hint.classList.add('show');
+    clearTimeout(window._hintTimer);
+    window._hintTimer = setTimeout(() => hint.classList.remove('show'), duration);
+  }
+  function addMarker(obj, y) {
+    const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.045), new THREE.MeshBasicMaterial({ color: 0xffd060 }));
+    m.position.y = y; obj.add(m);
+    gsap.to(m.position, { y: y + 0.06, duration: 0.8, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+    gsap.to(m.rotation, { y: Math.PI * 2, duration: 3, repeat: -1, ease: 'none' });
+  }
+
+  /* ===================== PERSONAGEM v25 (cilindros e esferas) ===================== */
+  function createPerson(skinColor = 0x8b5a2b, clothColor = 0x8b2a1a, scale = 1) {
+    const g = new THREE.Group();
+    g.scale.setScalar(scale);
+    const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.72 });
+    const clothMat = new THREE.MeshStandardMaterial({ color: clothColor, roughness: 0.9 });
+
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.4, 8), clothMat);
+    body.position.y = 0.35; body.castShadow = true; g.add(body);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 16), skinMat);
+    head.position.y = 0.65; head.castShadow = true; g.add(head);
+
+    const armL = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.32, 6), skinMat);
+    armL.position.set(-0.13, 0.42, 0); armL.castShadow = true; g.add(armL);
+    const armR = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.32, 6), skinMat);
+    armR.position.set(0.13, 0.42, 0); armR.castShadow = true; g.add(armR);
+
+    const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.3, 6), clothMat);
+    legL.position.set(-0.06, 0.15, 0); legL.castShadow = true; g.add(legL);
+    const legR = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.3, 6), clothMat);
+    legR.position.set(0.06, 0.15, 0); legR.castShadow = true; g.add(legR);
+
+    g.userData.armL = armL; g.userData.armR = armR;
+    g.userData.legL = legL; g.userData.legR = legR;
+    g.userData.head = head;
+
+    // Cabelo
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0x1a0f08, roughness: 0.8 });
+    const hair = new THREE.Mesh(new THREE.SphereGeometry(0.105, 12, 8, 0, Math.PI*2, 0, Math.PI/2), hairMat);
+    hair.position.y = 0.68; g.add(hair);
+
+    return g;
+  }
+
+  /* ===================== ANIMAÇÕES ===================== */
+  function walkInPlace(p, speed = 0.3) {
+    gsap.killTweensOf(p.userData.legL.rotation);
+    gsap.killTweensOf(p.userData.legR.rotation);
+    gsap.killTweensOf(p.userData.armL.rotation);
+    gsap.killTweensOf(p.userData.armR.rotation);
+    gsap.to(p.userData.legL.rotation, { x: -0.45, duration: speed, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+    gsap.to(p.userData.legR.rotation, { x: 0.45, duration: speed, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+    gsap.to(p.userData.armL.rotation, { x: 0.45, duration: speed, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+    gsap.to(p.userData.armR.rotation, { x: -0.45, duration: speed, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+  }
+  function jump(p) {
+    const baseY = p.position.y;
+    gsap.to(p.position, { y: baseY + 0.2, duration: 0.22, yoyo: true, repeat: 1, ease: 'power2.out' });
+    gsap.to(p.userData.armL.rotation, { z: -0.6, duration: 0.22, yoyo: true, repeat: 1 });
+    gsap.to(p.userData.armR.rotation, { z: 0.6, duration: 0.22, yoyo: true, repeat: 1 });
+  }
+  function wave(p) {
+    gsap.to(p.userData.armR.rotation, { z: -1.3, duration: 0.3, yoyo: true, repeat: 2, ease: 'power2.inOut' });
+  }
+  function spin(p) {
+    gsap.to(p.rotation, { y: p.rotation.y + Math.PI * 2, duration: 0.9, ease: 'power2.inOut' });
+  }
+  function bow(p) {
+    gsap.to(p.rotation, { x: 0.5, duration: 0.4, yoyo: true, repeat: 1, ease: 'power2.inOut' });
+  }
+  function attack(p) {
+    gsap.to(p.userData.armR.rotation, { z: 1.2, x: 0.3, duration: 0.18, yoyo: true, repeat: 1, ease: 'power2.in' });
+    gsap.to(p.rotation, { y: p.rotation.y + 0.3, duration: 0.18, yoyo: true, repeat: 1 });
+  }
+  function dance(p) {
+    gsap.to(p.position, { y: p.position.y + 0.04, duration: 0.3, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+    gsap.to(p.userData.armL.rotation, { z: 0.9, duration: 0.4, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+    gsap.to(p.userData.armR.rotation, { z: -0.9, duration: 0.4, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+    gsap.to(p.rotation, { y: p.rotation.y + 0.3, duration: 0.5, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+  }
+  function runLegs(p, speed = 0.3) { walkInPlace(p, speed); }
+  function idle(p) {
+    gsap.to(p.userData.head.rotation, { y: 0.15, duration: 3, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+    gsap.to(p.userData.armL.rotation, { x: 0.05, duration: 2.5, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+    gsap.to(p.userData.armR.rotation, { x: -0.05, duration: 2.5, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+  }
+  function sit(p) {
+    p.userData.legL.rotation.x = -1.4;
+    p.userData.legR.rotation.x = -1.4;
+    p.position.y = 0.15;
+  }
+
+  /* ===================== PROPS v25 ===================== */
+  function createPalmTree() {
+    const g = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.09, 1.2, 8), new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 0.9 }));
+    trunk.position.y = 0.6; trunk.castShadow = true; g.add(trunk);
+    const leafMat = new THREE.MeshStandardMaterial({ color: 0x2a5018, roughness: 0.85 });
+    for (let i = 0; i < 7; i++) {
+      const angle = (i / 7) * Math.PI * 2;
+      const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.6, 4), leafMat);
+      leaf.position.set(Math.cos(angle) * 0.25, 1.15, Math.sin(angle) * 0.25);
+      leaf.rotation.z = Math.PI / 3; leaf.rotation.y = -angle;
+      leaf.castShadow = true; g.add(leaf);
+      gsap.to(leaf.rotation, { z: Math.PI / 3 + 0.12, duration: 1.5 + Math.random() * 0.8, yoyo: true, repeat: -1, ease: 'sine.inOut', delay: Math.random() });
+    }
+    return g;
+  }
+  function createHut() {
+    const g = new THREE.Group();
+    const walls = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.32, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0xb08050, roughness: 0.92 }));
+    walls.position.y = 0.25; walls.castShadow = true; walls.receiveShadow = true; g.add(walls);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.44, 0.38, 8), new THREE.MeshStandardMaterial({ color: 0x6a3a15, roughness: 0.88 }));
+    roof.position.y = 0.69; roof.castShadow = true; g.add(roof);
+    return g;
+  }
+  function createPalisade() {
+    const g = new THREE.Group();
+    const postMat = new THREE.MeshStandardMaterial({ color: 0x4a2a0f, roughness: 0.95 });
+    for (let i = -5; i <= 5; i++) {
+      const h = 0.6 + Math.random() * 0.12;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, h, 6), postMat);
+      post.position.set(i * 0.12, h / 2, 0); post.castShadow = true; g.add(post);
+    }
+    for (const y of [0.2, 0.45]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.03, 0.02), postMat);
+      rail.position.y = y; g.add(rail);
+    }
+    return g;
+  }
+  function createSpear() {
+    const g = new THREE.Group();
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.8, 6), new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 0.9 }));
+    shaft.castShadow = true; g.add(shaft);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.14, 6), new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.25, metalness: 0.85 }));
+    tip.position.y = 0.47; tip.castShadow = true; g.add(tip);
+    return g;
+  }
+  function createGround(radius = 0.95, color = 0x6a5030) {
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(radius, 32), new THREE.MeshStandardMaterial({ color, roughness: 1 }));
+    ground.rotation.x = -Math.PI / 2; ground.position.y = 0.008; ground.receiveShadow = true;
+    return ground;
+  }
+  function createTorch() {
+    const g = new THREE.Group();
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 0.35, 6), new THREE.MeshStandardMaterial({ color: 0x3a2008, roughness: 0.95 }));
+    post.position.y = 0.175; post.castShadow = true; g.add(post);
+    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 12), new THREE.MeshStandardMaterial({ color: 0xff8030, emissive: 0xff5010, emissiveIntensity: 2, roughness: 0.4, transparent: true, opacity: 0.9 }));
+    flame.position.y = 0.38; flame.castShadow = true; g.add(flame);
+    idleObjects.push({ obj: flame, baseY: 0.38, ampY: 0.02, freq: 5, phase: Math.random() * Math.PI * 2 });
+    const light = new THREE.PointLight(0xff7030, 1.5, 2, 2);
+    light.position.y = 0.4; g.add(light);
+    gsap.to(light, { intensity: () => 0.8 + Math.random() * 1.6, duration: 0.15, repeat: -1, yoyo: true, repeatRefresh: true });
+    return g;
+  }
+  function createFire() {
+    const g = new THREE.Group();
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.25, 6), new THREE.MeshStandardMaterial({ color: 0x2a1008, roughness: 0.9 }));
+      log.rotation.z = Math.PI / 2; log.rotation.y = a; log.position.y = 0.03; log.castShadow = true; g.add(log);
+    }
+    for (let i = 0; i < 3; i++) {
+      const flame = new THREE.Mesh(new THREE.SphereGeometry(0.06 - i * 0.015, 10, 8), new THREE.MeshStandardMaterial({
+        color: [0xff4010, 0xff8020, 0xffd060][i],
+        emissive: [0xff3010, 0xff6020, 0xffa040][i],
+        emissiveIntensity: 2.2 - i * 0.3,
+        transparent: true, opacity: 0.85 - i * 0.15
+      }));
+      flame.position.y = 0.1 + i * 0.06; g.add(flame);
+      gsap.to(flame.scale, { x: 1 + Math.random() * 0.4, y: 1 + Math.random() * 0.6, duration: 0.15, yoyo: true, repeat: -1, repeatRefresh: true, ease: 'sine.inOut' });
+    }
+    const light = new THREE.PointLight(0xff7030, 2.2, 3, 2);
+    light.position.y = 0.3; g.add(light);
+    gsap.to(light, { intensity: () => 1.5 + Math.random() * 1.2, duration: 0.12, repeat: -1, yoyo: true, repeatRefresh: true });
+    return g;
+  }
+  function createPot() {
+    const g = new THREE.Group();
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 10), new THREE.MeshStandardMaterial({ color: 0xa0522d, roughness: 0.9 }));
+    p.position.y = 0.08; p.scale.y = 0.8; p.castShadow = true; g.add(p);
+    const n = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.03, 10), new THREE.MeshStandardMaterial({ color: 0x8a4520 }));
+    n.position.y = 0.15; g.add(n);
+    return g;
+  }
+  function createBasket() {
+    const g = new THREE.Group();
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.06, 0.1, 10, 1, true), new THREE.MeshStandardMaterial({ color: 0xa07040, roughness: 0.95, side: THREE.DoubleSide }));
+    b.position.y = 0.05; b.castShadow = true; g.add(b);
+    return g;
+  }
+  function createCrops() {
+    const g = new THREE.Group();
+    for (let i = 0; i < 6; i++) {
+      const s = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.015, 0.25, 5), new THREE.MeshStandardMaterial({ color: 0x4a7a22 }));
+      s.position.set(-0.3 + i * 0.12, 0.125, 0); s.castShadow = true; g.add(s);
+      const t = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.1, 4), new THREE.MeshStandardMaterial({ color: 0x6a9a42 }));
+      t.position.set(-0.3 + i * 0.12, 0.3, 0); g.add(t);
+    }
+    return g;
+  }
+  function createThrone() {
+    const g = new THREE.Group();
+    const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.2, 0.08, 10), new THREE.MeshStandardMaterial({ color: 0x4a2a10 }));
+    seat.position.y = 0.45; seat.castShadow = true; g.add(seat);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.35, 0.04), new THREE.MeshStandardMaterial({ color: 0x3a1a08 }));
+    back.position.set(0, 0.65, -0.18); g.add(back);
+    const leg1 = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.45, 6), new THREE.MeshStandardMaterial({ color: 0x3a1a08 }));
+    leg1.position.set(-0.15, 0.225, -0.15); g.add(leg1);
+    const leg2 = leg1.clone(); leg2.position.x = 0.15; g.add(leg2);
+    return g;
+  }
+  function createMountain() {
+    const g = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.ConeGeometry(0.7, 0.8, 8), new THREE.MeshStandardMaterial({ color: 0x3a5020, roughness: 1 }));
+    m.position.y = 0.4; m.castShadow = true; g.add(m);
+    return g;
+  }
+  function createScroll() {
+    const g = new THREE.Group();
+    const scrollMat = new THREE.MeshStandardMaterial({ color: 0xf0e0b0, roughness: 0.9, emissive: 0x3a2a10, emissiveIntensity: 0.15 });
+    const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.4, 14), scrollMat);
+    roll.rotation.z = Math.PI / 2; roll.position.y = 0.1; g.add(roll);
+    return g;
+  }
+  function createAtabaque() {
+    const g = new THREE.Group();
+    const d = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.055, 0.3, 12), new THREE.MeshStandardMaterial({ color: 0x6a3a15 }));
+    d.position.y = 0.15; d.castShadow = true; g.add(d);
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.082, 0.082, 0.01, 12), new THREE.MeshStandardMaterial({ color: 0xf0e0c0 }));
+    top.position.y = 0.3; g.add(top);
+    return g;
+  }
+  function createBerimbau() {
+    const g = new THREE.Group();
+    const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.7, 6), new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.85 }));
+    bow.rotation.z = 0.25; bow.position.y = 0.35; g.add(bow);
+    const gourd = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), new THREE.MeshStandardMaterial({ color: 0xc9a24a }));
+    gourd.position.y = 0.15; gourd.scale.y = 0.85; g.add(gourd);
+    return g;
+  }
+  function createAnvil() {
+    const g = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.12), new THREE.MeshStandardMaterial({ color: 0x4a2a10 }));
+    base.position.y = 0.04; base.castShadow = true; g.add(base);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.05, 0.09), new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.5, metalness: 0.7 }));
+    top.position.y = 0.1; top.castShadow = true; g.add(top);
+    return g;
+  }
+  function createForge() {
+    const g = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.2, 0.2), new THREE.MeshStandardMaterial({ color: 0x3a2a1a }));
+    base.position.y = 0.1; base.castShadow = true; g.add(base);
+    const fire = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), new THREE.MeshBasicMaterial({ color: 0xff6020, transparent: true, opacity: 0.9 }));
+    fire.position.y = 0.24; g.add(fire);
+    gsap.to(fire.scale, { x: 1.2, y: 1.3, duration: 0.3, yoyo: true, repeat: -1, repeatRefresh: true });
+    return g;
+  }
+
+  /* ===================== SCENE BUILDER ===================== */
+  function buildScene(cfg) {
+    const g = new THREE.Group();
+    const ground = createGround(cfg.radius || 0.95, cfg.ground || 0x6a5030);
+    g.add(ground);
+
+    for (const prop of cfg.props || []) {
+      let obj;
+      switch(prop.type) {
+        case 'hut': obj = createHut(); break;
+        case 'tree': obj = createPalmTree(); break;
+        case 'palm': obj = createPalmTree(); break;
+        case 'fire': obj = createFire(); break;
+        case 'palisade': obj = createPalisade(); break;
+        case 'spear': obj = createSpear(); break;
+        case 'torch': obj = createTorch(); break;
+        case 'pot': obj = createPot(); break;
+        case 'basket': obj = createBasket(); break;
+        case 'crops': obj = createCrops(); break;
+        case 'throne': obj = createThrone(); break;
+        case 'mountain': obj = createMountain(); break;
+        case 'scroll': obj = createScroll(); break;
+        case 'atabaque': obj = createAtabaque(); break;
+        case 'berimbau': obj = createBerimbau(); break;
+        case 'anvil': obj = createAnvil(); break;
+        case 'forge': obj = createForge(); break;
+        default: continue;
+      }
+      obj.position.set(prop.x || 0, prop.y || 0, prop.z || 0);
+      obj.rotation.y = prop.rotation || 0;
+      if (prop.scale) obj.scale.setScalar(prop.scale);
+      g.add(obj);
+      if (prop.onClick) { obj.userData.onClick = prop.onClick; interactiveObjects.push(obj); addMarker(obj, prop.markerY || 1.0); }
+    }
+
+    for (const char of cfg.characters || []) {
+      const p = createPerson(char.skin || 0x8b5a2b, char.cloth || 0x8b2a1a, char.scale || 1);
+      p.position.set(char.x || 0, 0, char.z || 0);
+      p.rotation.y = char.rotation || 0;
+      g.add(p);
+      if (char.onClick) { p.userData.onClick = char.onClick; interactiveObjects.push(p); addMarker(p, (char.scale || 1) * 0.95); }
+      const pose = char.pose || 'idle';
+      if (pose === 'walk') walkInPlace(p, 0.35);
+      else if (pose === 'attack') attack(p);
+      else if (pose === 'dance') dance(p);
+      else if (pose === 'wave') wave(p);
+      else if (pose === 'sit') sit(p);
+      else idle(p);
+    }
+    return g;
+  }
+
+  /* ===================== CENAS ===================== */
+  function sceneIntro() {
+    const g = new THREE.Group();
+    const sky = new THREE.Mesh(new THREE.CircleGeometry(0.98, 32), new THREE.MeshStandardMaterial({ color: 0x1a2a4a }));
+    sky.rotation.x = -Math.PI/2; sky.position.y = 0.005; g.add(sky);
+    const sun = new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 24), new THREE.MeshStandardMaterial({ color: 0xffd060, emissive: 0xff9020, emissiveIntensity: 1.3 }));
+    sun.position.y = 0.42; sun.castShadow = true;
+    sun.userData.onClick = () => { gsap.to(sun.scale, { x: 1.5, y: 1.5, z: 1.5, duration: 0.3, yoyo: true, repeat: 1 }); showHint('O sol nasce sobre a Serra da Barriga. Sua jornada começa agora.'); };
+    interactiveObjects.push(sun); addMarker(sun, 0.35); g.add(sun);
+    idleObjects.push({ obj: sun, baseY: 0.42, ampY: 0.04, freq: 1.1, phase: 0 });
+    gsap.to(sun.rotation, { y: Math.PI*2, duration: 22, repeat: -1, ease: 'none' });
+    const mnt = createMountain(); mnt.position.set(0, 0, -0.7); mnt.scale.setScalar(0.6); g.add(mnt);
+    return g;
+  }
+  function sceneSerra() { return buildScene({ ground: 0x4a5a20, props: [
+    { type: 'mountain', x: -0.4, z: -0.7, scale: 0.6, onClick: () => showHint('Serra da Barriga: 500m de altura, mata fechada. Do alto, avistavam-se os engenhos e o mar.') },
+    { type: 'mountain', x: 0.5, z: -0.6, scale: 0.5 },
+    { type: 'tree', x: -0.8, z: 0.4, scale: 0.8 }, { type: 'tree', x: 0.75, z: 0.5, scale: 0.7 }
+  ], characters: [{ x: 0, z: 0.4, cloth: 0x2a4a7a, pose: 'idle', rotation: Math.PI, onClick: () => showHint('Do alto da serra, avistamos o mar e os engenhos.') }] }); }
+  function sceneFundacao() { return buildScene({ props: [
+    { type: 'hut', x: -0.5, z: -0.6, scale: 0.75, onClick: () => showHint('Os primeiros mocambos eram simples. Com o tempo, viraram vilas inteiras.') },
+    { type: 'hut', x: 0.4, z: -0.7, scale: 0.65 },
+    { type: 'tree', x: 0.8, z: 0.4, scale: 0.7 }, { type: 'palm', x: -0.8, z: 0.4, scale: 0.75 }
+  ], characters: [{ x: 0, z: 0.3, cloth: 0x8b6a30, onClick: () => showHint('Palmares nasceu da fuga. Cada novo mocambo era um ato de liberdade coletiva.') }] }); }
+  function sceneMocambos() { return buildScene({ radius: 1.0, props: [
+    { type: 'hut', x: -0.7, z: -0.4, scale: 0.5 }, { type: 'hut', x: -0.2, z: -0.55, scale: 0.55, onClick: () => showHint('O Macaco era o maior mocambo — capital política de Palmares.') },
+    { type: 'hut', x: 0.3, z: -0.55, scale: 0.5 }, { type: 'hut', x: 0.7, z: -0.35, scale: 0.5 },
+    { type: 'palm', x: -0.85, z: 0.5, scale: 0.6 }, { type: 'palm', x: 0.85, z: 0.55, scale: 0.55 }
+  ], characters: [
+    { x: -0.3, z: 0.4, onClick: () => showHint('Palmares era uma federação de vários mocambos.') },
+    { x: 0.4, z: 0.5, cloth: 0x3a5a2a, pose: 'walk' }
+  ] }); }
+  function sceneGanga() { return buildScene({ props: [
+    { type: 'throne', x: 0.2, z: -0.4, onClick: () => showHint('Ganga Zumba, o Grande Senhor. Liderou Palmares por décadas.') },
+    { type: 'palm', x: -0.8, z: -0.5, scale: 0.7 }, { type: 'fire', x: 0.7, z: 0.4 }
+  ], characters: [
+    { x: 0.2, z: -0.35, cloth: 0xf0e0a0, pose: 'sit', onClick: () => showHint('"Um povo que não conhece sua história está condenado a repeti-la."') },
+    { x: -0.4, z: 0.4, onClick: () => showHint('Ganga Zumba era tio de Zumbi.') }
+  ] }); }
+  function sceneConselho() { return buildScene({ props: [
+    { type: 'fire', x: 0, z: -0.1 }, { type: 'throne', x: 0, z: -0.7, scale: 0.85 }
+  ], characters: [
+    { x: -0.5, z: 0.3, rotation: 0.6, onClick: () => showHint('O conselho decidia guerras, tratados e plantio em conjunto.') },
+    { x: 0.5, z: 0.3, cloth: 0x3a5a2a, rotation: -0.6 },
+    { x: 0, z: -0.65, cloth: 0xf0e0a0, pose: 'sit' }
+  ] }); }
+  function sceneDandara() { return buildScene({ props: [
+    { type: 'tree', x: -0.8, z: -0.4, scale: 0.75 }, { type: 'palisade', x: 0, z: -0.85, scale: 1.0 }
+  ], characters: [
+    { x: 0.2, z: 0, cloth: 0xc9a24a, pose: 'attack', rotation: -0.2, onClick: () => showHint('Dandara: guerreira e estrategista. Comandou tropas ao lado de Zumbi.') },
+    { x: -0.4, z: 0.4, cloth: 0x2a4a7a, rotation: 0.6, onClick: () => showHint('Você aprende com Dandara. A luta é de todas e todos.') }
+  ] }); }
+  function sceneNascimento() { return buildScene({ props: [
+    { type: 'hut', x: -0.5, z: -0.6, scale: 0.7 }, { type: 'tree', x: 0.7, z: -0.5, scale: 0.7 }, { type: 'fire', x: 0.6, z: 0.3 }
+  ], characters: [
+    { x: -0.2, z: 0, cloth: 0xa06a30, onClick: () => showHint('Zumbi nasceu livre em Palmares, em 1655.') },
+    { x: 0.3, z: 0.3, cloth: 0xd0a040, scale: 0.6, onClick: () => showHint('"Um dia serei livre como você, mãe."') }
+  ] }); }
+  function sceneRetorno() { return buildScene({ props: [
+    { type: 'hut', x: -0.5, z: -0.5, scale: 0.65 }, { type: 'palisade', x: 0.5, z: -0.6, scale: 0.75 }, { type: 'palm', x: 0.8, z: 0.4, scale: 0.7 }
+  ], characters: [
+    { x: 0.3, z: 0.3, pose: 'walk', onClick: () => showHint('Aos 15 anos, Zumbi fugiu do cativeiro e voltou a Palmares.') },
+    { x: -0.4, z: 0, cloth: 0xc9a24a, pose: 'wave', rotation: Math.PI*0.7, onClick: () => showHint('Dandara recebe Zumbi de volta.') }
+  ] }); }
+  function sceneAgricultura() { return buildScene({ radius: 1.0, props: [
+    { type: 'crops', x: -0.4, z: -0.5, rotation: 0.2, onClick: () => showHint('Milho, feijão, mandioca, banana. Palmares se alimentava da própria terra.') },
+    { type: 'crops', x: 0.4, z: -0.55, rotation: -0.2 }, { type: 'tree', x: -0.85, z: 0.4, scale: 0.7 }, { type: 'hut', x: 0.8, z: -0.7, scale: 0.5 }
+  ], characters: [
+    { x: 0, z: 0.2, cloth: 0x8b6a30, pose: 'plant', onClick: () => showHint('A agricultura era a base de tudo em Palmares.') },
+    { x: 0.5, z: 0.4, cloth: 0xa06a30, pose: 'walk' }
+  ] }); }
+  function sceneOleiras() { return buildScene({ ground: 0x7a5a30, props: [
+    { type: 'pot', x: -0.5, z: -0.3, onClick: () => showHint('Cada pote, cada panela, feita à mão pelas oleiras de Palmares.') },
+    { type: 'pot', x: -0.3, z: -0.2, scale: 0.8 }, { type: 'basket', x: 0.4, z: -0.3 }, { type: 'hut', x: 0.7, z: -0.7, scale: 0.55 }
+  ], characters: [{ x: 0, z: 0.2, cloth: 0xa06a30, pose: 'plant', onClick: () => showHint('A técnica de olaria passava de geração em geração.') }] }); }
+  function sceneFerreiros() { return buildScene({ ground: 0x6a4a20, props: [
+    { type: 'anvil', x: -0.3, z: -0.2, onClick: () => showHint('Enxadas, facas, pontas de lança. O ferro forjado sustentava Palmares.') },
+    { type: 'forge', x: 0.4, z: -0.3, onClick: () => showHint('O ferreiro era um dos artesãos mais valiosos do quilombo.') },
+    { type: 'hut', x: -0.7, z: -0.6, scale: 0.6 }
+  ], characters: [{ x: -0.1, z: 0.3, cloth: 0x4a4a4a, pose: 'attack', onClick: () => showHint('O ferreiro batia o ferro com precisão.') }] }); }
+  function sceneComercio() { return buildScene({ props: [
+    { type: 'basket', x: -0.4, z: -0.4, onClick: () => showHint('O que sobrava das roças era trocado com vilas vizinhas.') },
+    { type: 'pot', x: 0.1, z: -0.35, scale: 0.9 }, { type: 'basket', x: 0.5, z: -0.3, scale: 0.9 }, { type: 'hut', x: -0.75, z: -0.65, scale: 0.55 }
+  ], characters: [
+    { x: -0.3, z: 0.3, cloth: 0xd06a30, onClick: () => showHint('Comerciantes de Palmares negociavam com vilas próximas.') },
+    { x: 0.4, z: 0.4, pose: 'walk' }
+  ] }); }
+  function sceneFe() { return buildScene({ ground: 0x4a3a20, props: [
+    { type: 'fire', x: 0, z: -0.2, onClick: () => showHint('O fogo era sagrado. Em volta dele, cantavam-se rezas e honravam-se ancestrais.') },
+    { type: 'scroll', x: 0.4, z: -0.5 }, { type: 'scroll', x: -0.4, z: -0.55 }
+  ], characters: [
+    { x: -0.5, z: 0.4, cloth: 0xf0e0a0, onClick: () => showHint('A religiosidade africana sobreviveu em Palmares.') },
+    { x: 0.5, z: 0.4, pose: 'dance' }
+  ] }); }
+  function sceneMusica() { return buildScene({ ground: 0x5a4020, props: [
+    { type: 'atabaque', x: -0.3, z: -0.3, onClick: () => showHint('O atabaque marcava o ritmo do trabalho e da celebração.') },
+    { type: 'berimbau', x: 0.3, z: -0.3, onClick: () => showHint('O berimbau comandava a roda.') }, { type: 'fire', x: 0, z: 0.3 }
+  ], characters: [
+    { x: -0.5, z: 0.3, cloth: 0xd0a040, pose: 'dance', onClick: () => showHint('A música era memória viva da África.') },
+    { x: 0.5, z: 0.5, cloth: 0x3a5a2a, pose: 'dance' }
+  ] }); }
+  function sceneCapoeira() { return buildScene({ props: [
+    { type: 'tree', x: -0.8, z: -0.4, scale: 0.75 }, { type: 'fire', x: 0.7, z: 0.3 }
+  ], characters: [
+    { x: -0.2, z: 0.2, cloth: 0x3a5a2a, pose: 'attack', rotation: 0.6, onClick: () => showHint('A capoeira nasceu como luta disfarçada de dança.') },
+    { x: 0.3, z: 0.3, pose: 'wave', rotation: -0.6 }
+  ] }); }
+  function sceneCriancas() { return buildScene({ props: [
+    { type: 'tree', x: -0.8, z: -0.4, scale: 0.75 }, { type: 'palm', x: 0.8, z: -0.4, scale: 0.7 }
+  ], characters: [
+    { x: -0.3, z: 0.2, cloth: 0xd0a040, scale: 0.6, pose: 'walk', onClick: () => showHint('As crianças de Palmares cresciam livres.') },
+    { x: 0.1, z: 0.3, cloth: 0xa06a30, scale: 0.55, pose: 'dance' },
+    { x: 0.4, z: 0.4, cloth: 0x8b6a30, scale: 0.55, pose: 'walk' }
+  ] }); }
+  function sceneMulheres() { return buildScene({ props: [
+    { type: 'hut', x: -0.6, z: -0.6, scale: 0.6 }, { type: 'crops', x: 0.4, z: -0.5, rotation: -0.2 }, { type: 'pot', x: -0.4, z: 0.3, scale: 0.8 }
+  ], characters: [
+    { x: 0, z: 0, cloth: 0xc9a24a, onClick: () => showHint('As mulheres de Palmares lutavam, plantavam, curavam, criavam.') },
+    { x: 0.5, z: 0.3, cloth: 0xa06a30, pose: 'walk' }
+  ] }); }
+  function sceneSaude() { return buildScene({ ground: 0x5a4a20, props: [
+    { type: 'fire', x: 0, z: -0.3 }, { type: 'pot', x: 0.4, z: 0.1, onClick: () => showHint('Curandeiros conheciam ervas, raízes, cantos.') }, { type: 'hut', x: -0.7, z: -0.7, scale: 0.55 }
+  ], characters: [
+    { x: -0.2, z: 0.3, cloth: 0xf0e0a0, onClick: () => showHint('A medicina de Palmares vinha da África.') },
+    { x: 0.4, z: 0.4, pose: 'idle' }
+  ] }); }
+  function scenePalicadas() { return buildScene({ ground: 0x5a4020, radius: 1.0, props: [
+    { type: 'palisade', x: 0, z: -0.7, onClick: () => showHint('Paliçadas de madeira protegiam cada mocambo.') },
+    { type: 'palisade', x: -0.85, z: 0.2, rotation: Math.PI/2, scale: 0.7 },
+    { type: 'palisade', x: 0.85, z: 0.2, rotation: Math.PI/2, scale: 0.7 },
+    { type: 'fire', x: 0.4, z: 0.5 }
+  ], characters: [{ x: -0.2, z: 0.3, cloth: 0x2a4a7a, onClick: () => showHint('Palmares era uma fortaleza escondida na serra.') }] }); }
+  function sceneAmeaca() { return buildScene({ ground: 0x6a3a10, props: [
+    { type: 'palisade', x: 0, z: -0.2, scale: 1.2 }, { type: 'fire', x: -0.6, z: -0.7 }, { type: 'fire', x: 0.6, z: -0.75 }
+  ], characters: [
+    { x: -0.5, z: -0.75, cloth: 0x1a1a1a, pose: 'walk', onClick: () => showHint('Bandeirantes paulistas marcharam contra Palmares.') },
+    { x: 0.1, z: -0.8, cloth: 0x1a1a1a, pose: 'walk' },
+    { x: 0.6, z: -0.7, cloth: 0x1a1a1a, pose: 'walk' },
+    { x: 0, z: 0.5, cloth: 0x2a4a7a, onClick: () => showHint('Domingos Jorge Velho comandou a maior expedição.') }
+  ] }); }
+  function sceneTratado() { return buildScene({ ground: 0x5a4020, props: [
+    { type: 'throne', x: 0.2, z: -0.3 }, { type: 'scroll', x: 0, z: 0.3, onClick: () => showHint('Em 1678, o governador propôs um acordo. Ganga Zumba aceitou.') }
+  ], characters: [
+    { x: 0.2, z: -0.25, cloth: 0xf0e0a0, pose: 'sit', onClick: () => showHint('Para Ganga Zumba, era a chance de paz.') },
+    { x: -0.5, z: 0.3, onClick: () => showHint('Zumbi recusou: "Liberdade não se negocia."') }
+  ] }); }
+  function sceneDivisao() { return buildScene({ ground: 0x5a4020, props: [
+    { type: 'fire', x: 0, z: -0.6 }
+  ], characters: [
+    { x: -0.5, z: 0, cloth: 0xf0e0a0, onClick: () => showHint('Alguns seguiram Ganga Zumba e se mudaram para Cucáu.') },
+    { x: 0, z: 0.3, onClick: () => showHint('Outros seguiram Zumbi e permaneceram na serra.') },
+    { x: 0.5, z: 0, cloth: 0x3a5a2a }
+  ] }); }
+  function sceneTreinamento() { return buildScene({ ground: 0x6a4a20, props: [
+    { type: 'palisade', x: 0, z: -0.8 }, { type: 'spear', x: -0.7, z: -0.3, rotation: 0.2, y: 0.4 }, { type: 'spear', x: 0.7, z: -0.3, rotation: -0.2, y: 0.4 }
+  ], characters: [
+    { x: 0, z: -0.3, pose: 'attack', onClick: () => showHint('Zumbi treinava guerreiros dia e noite.') },
+    { x: -0.5, z: 0.3, cloth: 0x3a5a2a, pose: 'attack' },
+    { x: 0.5, z: 0.3, cloth: 0x3a5a2a, pose: 'attack' }
+  ] }); }
+  function sceneCerco() { return buildScene({ ground: 0x3a2a10, props: [
+    { type: 'palisade', x: 0, z: -0.4, scale: 1.1, onClick: () => showHint('1694. O cerco ao Macaco. Semanas de bombardeio.') },
+    { type: 'fire', x: -0.6, z: -0.6 }, { type: 'fire', x: 0.6, z: -0.6 }
+  ], characters: [{ x: 0, z: 0.3, pose: 'attack', onClick: () => showHint('Zumbi comandou a defesa de Palmares.') }] }); }
+  function sceneQueda() { return buildScene({ ground: 0x2a1a08, props: [
+    { type: 'hut', x: -0.6, z: -0.5, scale: 0.6 }, { type: 'palisade', x: 0.3, z: -0.4, scale: 0.75 }, { type: 'fire', x: -0.3, z: -0.3 }, { type: 'fire', x: 0.5, z: -0.6 }
+  ], characters: [{ x: 0, z: 0.3, pose: 'walk', rotation: Math.PI*0.5, onClick: () => showHint('O Macaco caiu. Zumbi escapou pela mata com poucos companheiros.') }] }); }
+  function sceneResistencia() { return buildScene({ ground: 0x2a1a08, props: [
+    { type: 'tree', x: -0.7, z: -0.5, scale: 0.6 }, { type: 'tree', x: 0.7, z: -0.5, scale: 0.6 }, { type: 'fire', x: 0, z: 0.3 }
+  ], characters: [
+    { x: -0.2, z: 0, onClick: () => showHint('Zumbi viveu escondido por mais de um ano.') },
+    { x: 0.3, z: 0.2, cloth: 0x3a5a2a }
+  ] }); }
+  function sceneTraicao() { return buildScene({ ground: 0x2a1a08, props: [
+    { type: 'fire', x: 0, z: 0 }, { type: 'tree', x: -0.7, z: -0.5, scale: 0.6 }
+  ], characters: [
+    { x: -0.3, z: 0.2, onClick: () => showHint('Zumbi, escondido, ainda era o símbolo da resistência.') },
+    { x: 0.3, z: 0.3, cloth: 0x4a4a2a, onClick: () => showHint('Antônio Soares revelou o esconderijo sob tortura.') }
+  ] }); }
+  function sceneMorte() { return buildScene({ ground: 0x1a1008, props: [
+    { type: 'fire', x: 0.4, z: -0.3 }
+  ], characters: [
+    { x: -0.2, z: 0, pose: 'sit', onClick: () => showHint('20 de novembro de 1695. Zumbi luta até o fim. Morre em combate.') },
+    { x: 0.4, z: 0.2, cloth: 0x1a1a1a }
+  ] }); }
+  function sceneLegado() { return buildScene({ ground: 0x4a5a20, radius: 1.0, props: [
+    { type: 'mountain', x: 0, z: -0.85, scale: 0.9, onClick: () => showHint('Serra da Barriga, hoje. Parque Memorial Quilombo dos Palmares.') },
+    { type: 'tree', x: -0.8, z: 0.3, scale: 0.7 }, { type: 'palm', x: 0.8, z: 0.3, scale: 0.7 }
+  ], characters: [
+    { x: -0.2, z: 0.2, pose: 'wave', onClick: () => showHint('Zumbi é herói da pátria desde 1996. Dandara, desde 2019.') },
+    { x: 0.3, z: 0.3, cloth: 0xc9a24a, pose: 'dance', onClick: () => showHint('A luta continua. A memória também.') }
+  ] }); }
+
+  /* ===================== PÁGINAS — 30 ===================== */
+  const PAGES = [
+    { title: 'Palmares', text: 'Palmares não foi apenas um refúgio.\n\nFoi uma nação. Na Serra da Barriga, africanos e afrodescendentes construíram uma sociedade livre por quase cem anos.\n\nToque no sol para começar.', build: sceneIntro },
+    { title: 'Serra da Barriga', text: 'A serra ergue-se 500 metros sobre a mata.\n\nDo alto, avistavam-se os engenhos e o mar. Podiam avistar inimigos antes que chegassem.\n\nToque nas montanhas.', build: sceneSerra },
+    { title: 'Fundação', text: 'No início, eram apenas alguns mocambos escondidos.\n\nCom o tempo, viraram uma federação com milhares de pessoas.\n\nToque nas cabanas.', build: sceneFundacao },
+    { title: 'Os Mocambos', text: 'Cada mocambo tinha roças, casas, oficinas.\n\nO Macaco era o maior e mais importante — a capital política de Palmares.\n\nToque nas cabanas.', build: sceneMocambos },
+    { title: 'Ganga Zumba', text: 'Ganga Zumba foi o primeiro grande líder.\n\nTio de Zumbi. Governou por décadas com sabedoria e diplomacia.\n\nToque no trono.', build: sceneGanga },
+    { title: 'O Conselho', text: 'O conselho de chefes decidia tudo em conjunto.\n\nGuerras, tratados, plantio. Uma democracia africana no coração da América.\n\nToque nos conselheiros.', build: sceneConselho },
+    { title: 'Dandara', text: 'Dandara lutou ao lado dos homens — e muitas vezes na frente deles.\n\nEstrategista brilhante, mãe de três filhos de Zumbi.\n\nToque em Dandara.', build: sceneDandara },
+    { title: 'Nascimento de Zumbi', text: 'Zumbi nasceu livre em Palmares, em 1655.\n\nFilho da terra. Cresceu ouvindo histórias de liberdade.\n\nToque na mãe e no menino.', build: sceneNascimento },
+    { title: 'O Retorno', text: 'Aos 6 anos, Zumbi foi capturado por bandeirantes.\n\nAos 15, fugiu. Voltou a Palmares. Para nunca mais sair.\n\nToque no viajante.', build: sceneRetorno },
+    { title: 'Agricultura', text: 'A agricultura era a base de tudo.\n\nMilho, feijão, mandioca, banana. Palmares alimentava seu povo com as próprias mãos.\n\nToque nas roças.', build: sceneAgricultura },
+    { title: 'Oleiras', text: 'As oleiras transformavam barro em panelas, potes e cumbucas.\n\nCada peça era feita à mão, com técnica passada de geração em geração.\n\nToque nos potes.', build: sceneOleiras },
+    { title: 'Ferreiros', text: 'Os ferreiros forjavam enxadas, facas, pontas de lança.\n\nEram os artesãos mais valiosos do quilombo.\n\nToque na forja.', build: sceneFerreiros },
+    { title: 'Comércio', text: 'O que sobrava das roças era trocado com vilas vizinhas.\n\nSal, ferramentas, tecidos. Palmares era autossuficiente, mas não isolado.\n\nToque nos cestos.', build: sceneComercio },
+    { title: 'Fé', text: 'A religiosidade africana sobreviveu em Palmares.\n\nOrixás, inquices, ancestrais. Cada canto era uma prece.\n\nToque na fogueira e nos sábios.', build: sceneFe },
+    { title: 'Música', text: 'Atabaques, berimbaus, maracás.\n\nA música marcava o trabalho, a guerra e a celebração. Era memória viva da África.\n\nToque nos instrumentos.', build: sceneMusica },
+    { title: 'Capoeira', text: 'A capoeira nasceu como luta disfarçada de dança.\n\nNas rodas de Palmares, corpos gingavam em silêncio.\n\nToque nos capoeiristas.', build: sceneCapoeira },
+    { title: 'Crianças', text: 'As crianças de Palmares cresciam livres.\n\nBrincavam, aprendiam ofícios, ouviam histórias.\n\nToque nas crianças.', build: sceneCriancas },
+    { title: 'Mulheres', text: 'As mulheres de Palmares lutavam, plantavam, curavam, criavam.\n\nEram guerreiras, mães, líderes. Dandara era o exemplo maior.\n\nToque nas mulheres.', build: sceneMulheres },
+    { title: 'Saúde', text: 'Curandeiros conheciam ervas, raízes, cantos.\n\nTratavam feridas, febres, dores. A medicina vinha da África.\n\nToque no curandeiro.', build: sceneSaude },
+    { title: 'Paliçadas', text: 'Paliçadas de madeira protegiam cada mocambo.\n\nVigias ficavam de tocaia. Palmares era uma fortaleza escondida.\n\nToque nas paliçadas.', build: scenePalicadas },
+    { title: 'A Ameaça', text: 'Os bandeirantes queriam destruir Palmares.\n\nDomingos Jorge Velho comandou a maior expedição.\n\nToque nos invasores.', build: sceneAmeaca },
+    { title: 'O Tratado', text: 'Em 1678, o governador propôs um acordo:\n\npaz em troca de terras longe da serra. Ganga Zumba aceitou. Zumbi recusou.\n\nToque no líder.', build: sceneTratado },
+    { title: 'A Divisão', text: 'Palmares se dividiu.\n\nIrmãos contra irmãos, por caminhos diferentes para a mesma liberdade.\n\nToque nos grupos.', build: sceneDivisao },
+    { title: 'Treinamento', text: 'Zumbi treinou guerreiros dia e noite.\n\nFormações, emboscadas, táticas de guerrilha.\n\nToque nos guerreiros.', build: sceneTreinamento },
+    { title: 'O Cerco', text: '1694. O cerco ao Macaco começou.\n\nSemanas de bombardeio. Os canhões abriram brechas nas paliçadas.\n\nToque nas paliçadas.', build: sceneCerco },
+    { title: 'Queda', text: 'O Macaco caiu.\n\nZumbi, ferido, escapou pela mata. Palmares perdeu a batalha, não a guerra.\n\nToque em Zumbi.', build: sceneQueda },
+    { title: 'Resistência', text: 'Zumbi viveu escondido por mais de um ano.\n\nCom poucos companheiros. Ainda liderava a resistência.\n\nToque nos resistentes.', build: sceneResistencia },
+    { title: 'A Traição', text: 'Antônio Soares, antigo companheiro, revelou o esconderijo.\n\nSob tortura. A tradição o lembra como traidor.\n\nToque nas figuras.', build: sceneTraicao },
+    { title: 'Morte de Zumbi', text: '20 de novembro de 1695.\n\nZumbi luta até o fim. Morre em combate. Sua cabeça é exposta no Recife.\n\nToque em Zumbi.', build: sceneMorte },
+    { title: 'Legado', text: 'Três séculos depois, Palmares vive.\n\nEm cada quilombo, em cada escola, em cada 20 de novembro.\n\nToque nas figuras.', build: sceneLegado }
+  ];
+
+  /* ===================== NAVEGAÇÃO ===================== */
+  let currentPageIndex = -1;
+  let currentSceneGroup = null;
+  function disposeScene(root) {
+    root.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) { if (Array.isArray(o.material)) o.material.forEach(m => m.dispose()); else o.material.dispose(); }
+      gsap.killTweensOf(o.rotation); gsap.killTweensOf(o.position); gsap.killTweensOf(o.scale);
+    });
+  }
+  function goToPage(index) {
+    if (index < 0 || index >= PAGES.length || index === currentPageIndex) return;
+    if (currentSceneGroup) {
+      const old = currentSceneGroup; currentSceneGroup = null;
+      interactiveObjects.length = 0; idleObjects.length = 0;
+      gsap.killTweensOf(old.position); gsap.killTweensOf(old.scale);
+      gsap.to(old.position, { y: -2.6, duration: 0.55, ease: 'back.in(2)', onComplete: () => { disposeScene(old); book.remove(old); } });
+    }
+    currentPageIndex = index;
+    const page = PAGES[index];
+    updateLeftPageText(page.title, page.text);
+    const built = page.build();
+    built.position.set(RIGHT_PAGE_CENTER.x, RIGHT_PAGE_CENTER.y - 2.6, RIGHT_PAGE_CENTER.z);
+    built.scale.setScalar(0.7);
+    book.add(built); currentSceneGroup = built;
+    gsap.to(built.position, { y: RIGHT_PAGE_CENTER.y, duration: 0.9, ease: 'back.out(1.35)', delay: 0.15 });
+    gsap.to(built.scale, { x: 1, y: 1, z: 1, duration: 0.9, ease: 'back.out(1.35)', delay: 0.15 });
+    updateUI();
+  }
+  function updateUI() {
+    document.getElementById('page-indicator').textContent = `${currentPageIndex + 1} / ${PAGES.length} · ${PAGES[currentPageIndex].title}`;
+    document.getElementById('prev-btn').disabled = currentPageIndex <= 0;
+    document.getElementById('next-btn').disabled = currentPageIndex >= PAGES.length - 1;
+  }
+
+  /* ===================== INTERAÇÃO ===================== */
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  let tapStart = null;
+  function setPointer(e) { pointer.x = (e.clientX / innerWidth) * 2 - 1; pointer.y = -(e.clientY / innerHeight) * 2 + 1; }
+  function findAncestor(obj, predicate) { while (obj && !predicate(obj)) obj = obj.parent; return obj; }
+  function onPointerDown(e) { setPointer(e); raycaster.setFromCamera(pointer, camera); tapStart = { x: e.clientX, y: e.clientY }; }
+  function onPointerMove(e) {
+    setPointer(e); raycaster.setFromCamera(pointer, camera);
+    const h = raycaster.intersectObjects(interactiveObjects, true);
+    renderer.domElement.style.cursor = h.length > 0 ? 'pointer' : 'default';
+  }
+  function onPointerUp(e) {
+    if (tapStart && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) < 6) {
+      setPointer(e); raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(interactiveObjects, true);
+      if (hits.length > 0) {
+        const t = findAncestor(hits[0].object, o => typeof o.userData.onClick === 'function');
+        if (t) t.userData.onClick();
+      }
+    }
+    tapStart = null;
+  }
+  renderer.domElement.addEventListener('pointerdown', onPointerDown);
+  renderer.domElement.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+
+  /* ===================== ÁUDIO ===================== */
+  let audioCtx = null;
+  function initAudio() {
+    if (audioCtx) return;
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch (err) {}
+  }
+  function playChime() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    [523.25, 659.25, 783.99].forEach((freq, i) => {
+      const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+      osc.type = 'sine'; osc.frequency.value = freq;
+      const start = t + i * 0.07;
+      gain.gain.setValueAtTime(0.0001, start); gain.gain.exponentialRampToValueAtTime(0.08, start + 0.02); gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.9);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(start); osc.stop(start + 1.0);
+    });
+  }
+
+  /* ===================== BOTÕES ===================== */
+  document.getElementById('prev-btn').addEventListener('click', () => { if (currentPageIndex > 0) { playChime(); goToPage(currentPageIndex - 1); } });
+  document.getElementById('next-btn').addEventListener('click', () => { if (currentPageIndex < PAGES.length - 1) { playChime(); goToPage(currentPageIndex + 1); } });
+  document.getElementById('reset-btn').addEventListener('click', () => { playChime(); if (currentPageIndex !== 0) goToPage(0); else { currentPageIndex = -1; goToPage(0); } });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); if (currentPageIndex < PAGES.length - 1) { playChime(); goToPage(currentPageIndex + 1); } }
+    else if (e.key === 'ArrowLeft') { if (currentPageIndex > 0) { playChime(); goToPage(currentPageIndex - 1); } }
+  });
+  window.addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+  /* ===================== LOOP ===================== */
+  const clock = new THREE.Clock();
+  function animate() {
+    requestAnimationFrame(animate);
+    const t = clock.getElapsedTime();
+    for (const item of idleObjects) item.obj.position.y = item.baseY + Math.sin(t * item.freq + item.phase) * item.ampY;
+    keyLight.intensity = 2.5 + Math.sin(t * 3.1) * 0.08;
+    const ep = emberGeom.attributes.position.array;
+    for (let i = 0; i < EMBER_COUNT; i++) {
+      ep[i*3+1] += emberData[i].speed * 0.01;
+      ep[i*3] += Math.sin(t + emberData[i].wobble) * 0.0018;
+      if (ep[i*3+1] > 7) { ep[i*3+1] = 0; ep[i*3] = (Math.random() - 0.5) * 18; ep[i*3+2] = (Math.random() - 0.5) * 18; }
+    }
+    emberGeom.attributes.position.needsUpdate = true;
+    controls.update();
+    renderer.render(scene, camera);
+  }
+
+  /* ===================== INICIALIZAÇÃO ===================== */
+  document.getElementById('start-btn').addEventListener('click', () => {
+    initAudio();
+    document.getElementById('intro-screen').classList.add('hidden');
+    setTimeout(() => goToPage(0), 300);
+  });
+  animate();
+  </script>
+</body>
+</html>
